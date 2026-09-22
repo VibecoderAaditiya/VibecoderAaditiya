@@ -1,26 +1,35 @@
 #!/usr/bin/env python3
+
 """
 GitHub Contribution Snake
--------------------------
+=========================
 
-A Snake-game-style animated SVG that hunts GitHub contribution squares.
+Animated SVG of a Snake-game-style creature hunting GitHub
+contribution squares.
 
 Behavior:
-- Level 4 targets are eaten first
-- Then level 3
-- Then level 2
-- Then level 1
-- The snake moves one grid cell at a time
-- The snake cannot move through its own body
-- Eating a contribution square grows the snake by one segment
-- Eaten contribution squares disappear
-- The animation loops automatically
+
+    START
+      ↓
+    hunt brightest squares
+      ↓
+    eat → grow
+      ↓
+    finish all targets
+      ↓
+    return to START
+      ↓
+    restore all contribution squares
+      ↓
+    repeat forever
 
 Usage:
-    python3 generate_snake.py <github_username> <output_svg_path>
+
+    python3 generate_snake.py <github_username> <output.svg>
 
 Example:
-    python3 generate_snake.py aadi output/snake.svg
+
+    python3 generate_snake.py aadi snake.svg
 """
 
 import sys
@@ -40,15 +49,21 @@ SIZE = 9
 PAD_X = 30
 PAD_Y = 30
 
+# Lower = faster.
 STEP_TIME = 0.085
 
-BG_COLOR = "#0d1117"
-EATEN_COLOR = "#161b22"
+# Pause at the starting position before restarting.
+RESET_PAUSE_STEPS = 12
 
+# Pause after finishing all beads before returning.
+FINISH_PAUSE_STEPS = 10
+
+# Snake appearance.
 SNAKE_COLOR = "#f2f2f2"
 SNAKE_HEAD_COLOR = "#ffffff"
 SNAKE_EYE_COLOR = "#0d1117"
 
+# Contribution colors.
 LEVEL_COLORS = {
     0: "#1b2430",
     1: "#0e4429",
@@ -57,15 +72,14 @@ LEVEL_COLORS = {
     4: "#39d353",
 }
 
-# Number of extra frames after the final target before looping.
-LOOP_PAUSE_STEPS = 30
+# What an eaten square becomes.
+EATEN_COLOR = "#161b22"
 
-# Prevent pathological SVGs if GitHub changes its grid.
-MAX_SIMULATION_STEPS = 30000
+MAX_STEPS = 50000
 
 
 # ============================================================
-# FETCH GITHUB CONTRIBUTION GRID
+# GITHUB DATA
 # ============================================================
 
 def fetch_grid(username):
@@ -74,25 +88,34 @@ def fetch_grid(username):
     req = urllib.request.Request(
         url,
         headers={
-            "User-Agent": "Mozilla/5.0 GitHub-Contribution-Snake"
+            "User-Agent": "Mozilla/5.0 GitHub-Snake"
         },
     )
 
     try:
-        html = urllib.request.urlopen(req, timeout=20).read().decode("utf-8")
+        html = urllib.request.urlopen(
+            req,
+            timeout=20
+        ).read().decode("utf-8")
+
     except Exception as exc:
         raise RuntimeError(
-            f"Could not fetch GitHub contributions for '{username}': {exc}"
+            f"Could not fetch GitHub contributions: {exc}"
         )
 
-    rows = re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.S)
+    rows = re.findall(
+        r"<tr[^>]*>(.*?)</tr>",
+        html,
+        re.S
+    )
 
     weekday_rows = []
 
     for row in rows:
+
         cells = re.findall(
             r'data-date="([0-9-]+)"[^>]*data-level="([0-9])"',
-            row,
+            row
         )
 
         if cells:
@@ -103,27 +126,25 @@ def fetch_grid(username):
             "Could not parse GitHub contribution data."
         )
 
-    # GitHub contribution HTML normally has 7 weekday rows.
-    # We transpose the data into:
-    #
-    #     (week, weekday) -> level
-    #
-    # rather than assuming every row has exactly the same size.
-
     n_days = len(weekday_rows)
-    n_weeks = max(len(row) for row in weekday_rows)
+    n_weeks = max(
+        len(row)
+        for row in weekday_rows
+    )
 
     grid = {}
 
-    for weekday, row in enumerate(weekday_rows):
+    for day, row in enumerate(weekday_rows):
+
         for week, (_, level) in enumerate(row):
-            grid[(week, weekday)] = int(level)
+
+            grid[(week, day)] = int(level)
 
     return grid, n_weeks, n_days
 
 
 # ============================================================
-# GRID HELPERS
+# GRID
 # ============================================================
 
 DIRECTIONS = (
@@ -134,131 +155,93 @@ DIRECTIONS = (
 )
 
 
-def neighbors(cell, n_weeks, n_days):
-    w, d = cell
+def neighbors(cell, width, height):
 
-    for dw, dd in DIRECTIONS:
-        nw = w + dw
-        nd = d + dd
+    x, y = cell
 
-        if 0 <= nw < n_weeks and 0 <= nd < n_days:
-            yield (nw, nd)
+    for dx, dy in DIRECTIONS:
 
+        nx = x + dx
+        ny = y + dy
 
-def is_inside(cell, n_weeks, n_days):
-    w, d = cell
-    return 0 <= w < n_weeks and 0 <= d < n_days
+        if (
+            0 <= nx < width
+            and 0 <= ny < height
+        ):
+            yield nx, ny
 
 
 # ============================================================
-# BFS PATHFINDING
+# BFS
 # ============================================================
 
-def bfs_path(
+def find_path(
     start,
     target,
     body,
-    n_weeks,
-    n_days,
-    allow_tail=True,
+    width,
+    height,
 ):
     """
-    Find a shortest collision-free path from start to target.
+    Find a collision-free path.
 
-    The snake body is represented as:
+    body[0] = head
+    body[-1] = tail
 
-        [head, neck, ..., tail]
-
-    The tail can normally be entered because it moves away on
-    the same turn.
-
-    However, if we are specifically targeting an eating move,
-    the target itself must not be part of the body.
+    The tail is allowed as a destination because it moves
+    away during a normal Snake movement.
     """
 
     if start == target:
         return []
 
-    blocked = set(body)
+    blocked = set(body[:-1])
 
-    # The tail normally disappears when the snake moves.
-    if allow_tail and len(body) > 1:
-        blocked.discard(body[-1])
-
-    # Never allow the target if it is occupied by the body.
     if target in blocked:
         return None
 
     queue = deque([start])
-    parent = {start: None}
+    parent = {
+        start: None
+    }
 
     while queue:
+
         current = queue.popleft()
 
-        for nxt in neighbors(current, n_weeks, n_days):
+        for nxt in neighbors(
+            current,
+            width,
+            height,
+        ):
 
             if nxt in parent:
-                continue
-
-            if nxt in blocked and nxt != target:
-                continue
-
-            parent[nxt] = current
-
-            if nxt == target:
-                path = []
-                cur = target
-
-                while cur != start:
-                    path.append(cur)
-                    cur = parent[cur]
-
-                path.reverse()
-                return path
-
-            queue.append(nxt)
-
-    return None
-
-
-# ============================================================
-# SAFETY CHECK
-# ============================================================
-
-def flood_fill_size(start, body, n_weeks, n_days):
-    """
-    Estimate how much free space remains reachable from start.
-
-    This prevents the snake from making obviously stupid moves
-    that trap its head in a tiny pocket.
-    """
-
-    blocked = set(body)
-
-    # Tail will normally move away.
-    if len(body) > 1:
-        blocked.discard(body[-1])
-
-    if start in blocked:
-        return 0
-
-    queue = deque([start])
-    visited = {start}
-
-    while queue:
-        current = queue.popleft()
-
-        for nxt in neighbors(current, n_weeks, n_days):
-            if nxt in visited:
                 continue
 
             if nxt in blocked:
                 continue
 
-            visited.add(nxt)
+            parent[nxt] = current
+
+            if nxt == target:
+
+                path = []
+
+                cursor = target
+
+                while cursor != start:
+
+                    path.append(cursor)
+
+                    cursor = parent[cursor]
+
+                path.reverse()
+
+                return path
+
             queue.append(nxt)
 
-    return len(visited)
+    return None
 
 
 # ============================================================
@@ -268,260 +251,412 @@ def flood_fill_size(start, body, n_weeks, n_days):
 def choose_target(
     head,
     body,
-    remaining_targets,
-    n_weeks,
-    n_days,
+    remaining,
+    width,
+    height,
 ):
     """
-    Choose the highest-priority reachable target.
+    Brightness is the primary priority.
 
-    Priority:
-        level 4
-        level 3
-        level 2
-        level 1
-
-    Within the same level:
-        shortest reachable path wins.
+    Within a brightness level, nearest reachable
+    contribution square wins.
     """
 
     for level in (4, 3, 2, 1):
 
-        candidates = [
+        targets = [
             cell
-            for cell in remaining_targets
-            if remaining_targets[cell] == level
+            for cell, target_level in remaining.items()
+            if target_level == level
             and cell not in body
         ]
-
-        if not candidates:
-            continue
 
         best_target = None
         best_path = None
 
-        for target in candidates:
+        for target in targets:
 
-            path = bfs_path(
+            path = find_path(
                 head,
                 target,
                 body,
-                n_weeks,
-                n_days,
+                width,
+                height,
             )
 
             if path is None:
                 continue
 
-            if best_path is None or len(path) < len(best_path):
+            if (
+                best_path is None
+                or len(path) < len(best_path)
+            ):
                 best_target = target
                 best_path = path
 
         if best_target is not None:
-            return best_target, best_path
+
+            return (
+                best_target,
+                best_path,
+            )
 
     return None, None
 
 
 # ============================================================
-# SIMULATE SNAKE
+# SIMULATION FRAME
 # ============================================================
 
-def simulate_snake(
+def frame(body, eaten=None):
+
+    return {
+        "body": tuple(body),
+        "eaten": eaten,
+    }
+
+
+# ============================================================
+# SIMULATE ONE COMPLETE RUN
+# ============================================================
+
+def simulate_run(
     grid,
-    n_weeks,
-    n_days,
+    width,
+    height,
 ):
     """
-    Generate the actual frame-by-frame Snake state.
+    Produces actual Snake states.
 
-    Every frame contains the entire body:
+    Every frame contains the complete body.
 
-        frame[0] = head
-        frame[1] = neck
-        ...
-        frame[-1] = tail
+    Example:
 
-    This is the important architectural difference from the
-    original implementation.
+        frame 0
+        H
+
+        frame 1
+        H
+        B
+
+        frame 2
+        H
+        B
+        B
+
+        eat:
+        H
+        B
+        B
+        B
+
+    The tail remains on an eating frame,
+    causing the snake to grow.
     """
 
-    # Start near the upper-left corner.
+    # --------------------------------------------------------
+    # Start position.
+    # --------------------------------------------------------
 
     start = (0, 0)
 
-    # Make sure the starting cell exists.
     if start not in grid:
-        start = min(grid.keys())
+
+        start = min(
+            grid.keys(),
+            key=lambda p: (
+                p[0],
+                p[1],
+            )
+        )
 
     body = [start]
 
-    # Only non-zero contribution squares are targets.
+    # --------------------------------------------------------
+    # All active contribution squares.
+    # --------------------------------------------------------
+
     remaining = {
         cell: level
         for cell, level in grid.items()
         if level > 0
+        and cell != start
     }
 
-    # Don't eat the starting square accidentally.
-    remaining.pop(start, None)
+    frames = [
+        frame(body)
+    ]
 
-    frames = []
-
-    # Initial frame.
-    frames.append({
-        "body": list(body),
-        "eaten": None,
-        "grow": False,
-    })
-
-    eaten_order = []
+    eaten_cells = []
 
     steps = 0
 
-    while remaining and steps < MAX_SIMULATION_STEPS:
+    # ========================================================
+    # HUNT
+    # ========================================================
+
+    while remaining:
+
+        if steps >= MAX_STEPS:
+            break
 
         target, path = choose_target(
             body[0],
             body,
             remaining,
-            n_weeks,
-            n_days,
+            width,
+            height,
         )
 
         # ----------------------------------------------------
-        # No target currently reachable.
-        # Try moving toward open space instead of freezing.
+        # If no target can currently be reached,
+        # move toward the largest available space.
         # ----------------------------------------------------
 
         if target is None:
 
-            possible_moves = []
+            candidates = []
 
             for nxt in neighbors(
                 body[0],
-                n_weeks,
-                n_days,
+                width,
+                height,
             ):
+
                 if nxt in body[:-1]:
                     continue
 
-                test_body = [nxt] + body
+                # Normal movement.
+                new_body = [nxt] + body[:-1]
 
-                # Normal movement removes tail.
-                if len(test_body) > 1:
-                    test_body.pop()
+                # Estimate available space.
+                queue = deque([nxt])
+                visited = {nxt}
 
-                space = flood_fill_size(
-                    nxt,
-                    test_body,
-                    n_weeks,
-                    n_days,
+                while queue:
+
+                    current = queue.popleft()
+
+                    for candidate in neighbors(
+                        current,
+                        width,
+                        height,
+                    ):
+
+                        if candidate in visited:
+                            continue
+
+                        if candidate in new_body:
+                            continue
+
+                        visited.add(candidate)
+                        queue.append(candidate)
+
+                candidates.append(
+                    (
+                        len(visited),
+                        nxt,
+                    )
                 )
 
-                possible_moves.append(
-                    (space, nxt)
-                )
-
-            if not possible_moves:
+            if not candidates:
                 break
 
-            possible_moves.sort(
-                key=lambda item: item[0],
-                reverse=True,
+            candidates.sort(
+                reverse=True
             )
 
-            nxt = possible_moves[0][1]
+            nxt = candidates[0][1]
 
-            body = [nxt] + body
+            body = [
+                nxt
+            ] + body[:-1]
 
-            if len(body) > 1:
-                body.pop()
-
-            frames.append({
-                "body": list(body),
-                "eaten": None,
-                "grow": False,
-            })
+            frames.append(
+                frame(body)
+            )
 
             steps += 1
+
             continue
 
         # ----------------------------------------------------
-        # Follow path one cell at a time.
+        # Follow target path.
         # ----------------------------------------------------
 
         for nxt in path:
 
-            if steps >= MAX_SIMULATION_STEPS:
+            if steps >= MAX_STEPS:
                 break
 
-            eating = nxt == target and target in remaining
+            eating = (
+                nxt == target
+                and target in remaining
+            )
 
-            # Collision check.
-            occupied_without_tail = set(body[:-1])
-
-            if nxt in occupied_without_tail:
-                # This should never happen because BFS avoids it.
-                # If it somehow does, abandon this path.
+            # Safety.
+            if nxt in body[:-1]:
                 break
 
-            new_body = [nxt] + body
+            # ------------------------------------------------
+            # NORMAL MOVE
+            # ------------------------------------------------
 
             if not eating:
-                # Normal Snake movement:
-                # add head, remove tail.
-                new_body.pop()
 
-            else:
-                # Eating:
-                # add head, KEEP tail.
-                level = remaining.pop(target)
-                eaten_order.append(
-                    (target, level)
+                body = [
+                    nxt
+                ] + body[:-1]
+
+                frames.append(
+                    frame(body)
                 )
 
-            body = new_body
+            # ------------------------------------------------
+            # EAT
+            # ------------------------------------------------
 
-            frames.append({
-                "body": list(body),
-                "eaten": target if eating else None,
-                "grow": eating,
-            })
+            else:
+
+                # Add head.
+                #
+                # IMPORTANT:
+                # Do NOT remove the tail.
+                #
+                # This is what makes the snake grow.
+                body = [
+                    nxt
+                ] + body
+
+                eaten_cells.append(
+                    target
+                )
+
+                del remaining[target]
+
+                frames.append(
+                    frame(
+                        body,
+                        eaten=target,
+                    )
+                )
 
             steps += 1
 
             if eating:
                 break
 
-        else:
-            continue
+    # ========================================================
+    # FINISH PAUSE
+    # ========================================================
 
-    # --------------------------------------------------------
-    # Small pause at end.
-    # --------------------------------------------------------
+    for _ in range(
+        FINISH_PAUSE_STEPS
+    ):
 
-    for _ in range(LOOP_PAUSE_STEPS):
-        frames.append({
-            "body": list(body),
-            "eaten": None,
-            "grow": False,
-        })
+        frames.append(
+            frame(body)
+        )
 
-    return frames, eaten_order
+    # ========================================================
+    # RETURN TO START
+    # ========================================================
+
+    """
+    We do not simply teleport the snake.
+
+    The snake head travels through the reverse of its
+    previously visited head trajectory.
+
+    To keep this safe and visually clean, the return phase
+    is intentionally a RESET phase: the body contracts while
+    the head travels toward the starting area.
+    """
+
+    # Create a safe route from current head to start.
+    return_path = find_path(
+        body[0],
+        start,
+        body,
+        width,
+        height,
+    )
+
+    if return_path is None:
+
+        # If the fully grown body blocks a direct return,
+        # use a clean reset path independent of the body.
+        return_path = find_path(
+            body[0],
+            start,
+            [],
+            width,
+            height,
+        )
+
+    if return_path:
+
+        for nxt in return_path:
+
+            if len(body) > 1:
+
+                # Move normally while shrinking one segment
+                # at a time during reset.
+                body = [
+                    nxt
+                ] + body[:-1]
+
+            else:
+
+                body = [
+                    nxt
+                ]
+
+            frames.append(
+                frame(body)
+            )
+
+    # Ensure exact start.
+    body = [start]
+
+    frames.append(
+        frame(body)
+    )
+
+    # ========================================================
+    # RESET PAUSE
+    # ========================================================
+
+    for _ in range(
+        RESET_PAUSE_STEPS
+    ):
+
+        frames.append(
+            frame(body)
+        )
+
+    return (
+        frames,
+        eaten_cells,
+    )
 
 
 # ============================================================
-# SVG GENERATION
+# BUILD SVG
 # ============================================================
 
 def build_svg(
     grid,
     frames,
-    eaten_order,
     n_weeks,
     n_days,
 ):
+    """
+    Generates transparent SVG.
+
+    No black background rectangle is created.
+    """
+
     width = (
         PAD_X * 2
         + (n_weeks - 1) * CELL
@@ -534,37 +669,31 @@ def build_svg(
         + CELL
     )
 
-    frame_count = len(frames)
+    total_frames = len(frames)
 
-    if frame_count < 2:
-        frame_count = 2
-
-    total_duration = (
-        max(frame_count - 1, 1)
+    duration = (
+        max(
+            total_frames - 1,
+            1
+        )
         * STEP_TIME
     )
 
-    total_duration = round(
-        total_duration,
-        3,
+    duration = round(
+        duration,
+        3
     )
 
-    def xy(cell):
-        return (
-            PAD_X + cell[0] * CELL,
-            PAD_Y + cell[1] * CELL,
-        )
-
     # --------------------------------------------------------
-    # Frame timing.
+    # Time keys.
     # --------------------------------------------------------
 
     times = [
         round(
-            i / (frame_count - 1),
-            6,
+            i / (total_frames - 1),
+            6
         )
-        for i in range(frame_count)
+        for i in range(total_frames)
     ]
 
     key_times = ";".join(
@@ -572,21 +701,33 @@ def build_svg(
         for t in times
     )
 
-    # --------------------------------------------------------
-    # Determine when each contribution square is eaten.
-    # --------------------------------------------------------
+    def xy(cell):
 
-    eat_time = {}
+        return (
+            PAD_X + cell[0] * CELL,
+            PAD_Y + cell[1] * CELL,
+        )
 
-    for i, frame in enumerate(frames):
-        cell = frame["eaten"]
+    # ========================================================
+    # EAT EVENTS
+    # ========================================================
 
-        if cell is not None and cell not in eat_time:
-            eat_time[cell] = times[i]
+    eat_times = {}
 
-    # --------------------------------------------------------
-    # SVG header.
-    # --------------------------------------------------------
+    for index, current_frame in enumerate(frames):
+
+        eaten = current_frame["eaten"]
+
+        if (
+            eaten is not None
+            and eaten not in eat_times
+        ):
+
+            eat_times[eaten] = times[index]
+
+    # ========================================================
+    # SVG START
+    # ========================================================
 
     svg = []
 
@@ -598,54 +739,61 @@ def build_svg(
         f'height="{height}">'
     )
 
-    svg.append(
-        f'<rect '
-        f'x="0" y="0" '
-        f'width="{width}" '
-        f'height="{height}" '
-        f'rx="16" '
-        f'fill="{BG_COLOR}"/>'
-    )
-
-    # --------------------------------------------------------
-    # Filters.
-    # --------------------------------------------------------
+    # ========================================================
+    # FILTERS
+    # ========================================================
 
     svg.append(
-        '<defs>'
+        """
+        <defs>
 
-        '<filter id="glow" '
-        'x="-100%" y="-100%" '
-        'width="300%" height="300%">'
-        '<feGaussianBlur '
-        'stdDeviation="2.4" '
-        'result="blur"/>'
-        '<feMerge>'
-        '<feMergeNode in="blur"/>'
-        '<feMergeNode in="SourceGraphic"/>'
-        '</feMerge>'
-        '</filter>'
+            <filter
+                id="glow"
+                x="-100%"
+                y="-100%"
+                width="300%"
+                height="300%"
+            >
+                <feGaussianBlur
+                    stdDeviation="2.2"
+                    result="blur"
+                />
 
-        '<filter id="glowStrong" '
-        'x="-150%" y="-150%" '
-        'width="400%" height="400%">'
-        '<feGaussianBlur '
-        'stdDeviation="4" '
-        'result="blur"/>'
-        '<feMerge>'
-        '<feMergeNode in="blur"/>'
-        '<feMergeNode in="SourceGraphic"/>'
-        '</feMerge>'
-        '</filter>'
+                <feMerge>
+                    <feMergeNode in="blur"/>
+                    <feMergeNode in="SourceGraphic"/>
+                </feMerge>
+            </filter>
 
-        '</defs>'
+            <filter
+                id="strongGlow"
+                x="-200%"
+                y="-200%"
+                width="400%"
+                height="400%"
+            >
+                <feGaussianBlur
+                    stdDeviation="3.5"
+                    result="blur"
+                />
+
+                <feMerge>
+                    <feMergeNode in="blur"/>
+                    <feMergeNode in="SourceGraphic"/>
+                </feMerge>
+            </filter>
+
+        </defs>
+        """
     )
 
     # ========================================================
-    # CONTRIBUTION GRID
+    # CONTRIBUTION CELLS
     # ========================================================
 
-    svg.append("<g>")
+    svg.append(
+        '<g id="contributions">'
+    )
 
     for cell, level in grid.items():
 
@@ -656,7 +804,11 @@ def build_svg(
 
         color = LEVEL_COLORS[level]
 
-        if cell not in eat_time:
+        # ----------------------------------------------------
+        # NEVER EATEN
+        # ----------------------------------------------------
+
+        if cell not in eat_times:
 
             svg.append(
                 f'<rect '
@@ -671,10 +823,25 @@ def build_svg(
             continue
 
         # ----------------------------------------------------
-        # EATEN CONTRIBUTION
+        # EATEN CELL
         # ----------------------------------------------------
 
-        t = eat_time[cell]
+        eat_t = eat_times[cell]
+
+        # The key trick:
+        #
+        # 0 → visible
+        # eat time → visible
+        # immediately after eat → invisible
+        # until the loop ends
+        # loop restart → visible again
+        #
+        # This guarantees the bead comes back every cycle.
+
+        after_eat = min(
+            eat_t + 0.0005,
+            0.999999
+        )
 
         svg.append(
             f'<rect '
@@ -686,13 +853,12 @@ def build_svg(
             f'fill="{color}" '
             f'filter="url(#glow)">'
 
-            # Disappear exactly when eaten.
             f'<animate '
             f'attributeName="opacity" '
+            f'keyTimes="0;{eat_t};{after_eat};1" '
+            f'values="1;1;0;0" '
             f'calcMode="discrete" '
-            f'keyTimes="0;{t};1" '
-            f'values="1;1;0" '
-            f'dur="{total_duration}s" '
+            f'dur="{duration}s" '
             f'repeatCount="indefinite"/>'
 
             '</rect>'
@@ -703,8 +869,8 @@ def build_svg(
         # ----------------------------------------------------
 
         burst_end = min(
-            1.0,
-            t + 0.018,
+            eat_t + 0.018,
+            1.0
         )
 
         svg.append(
@@ -714,123 +880,172 @@ def build_svg(
             f'r="0" '
             f'fill="none" '
             f'stroke="{color}" '
-            f'stroke-width="1.6" '
+            f'stroke-width="1.5" '
             f'opacity="0" '
-            f'filter="url(#glowStrong)">'
+            f'filter="url(#strongGlow)">'
 
             f'<animate '
             f'attributeName="r" '
-            f'keyTimes="0;{t};{burst_end};1" '
+            f'keyTimes="0;{eat_t};{burst_end};1" '
             f'values="0;{SIZE / 2};{SIZE * 1.5};{SIZE * 1.5}" '
-            f'dur="{total_duration}s" '
+            f'dur="{duration}s" '
             f'repeatCount="indefinite"/>'
 
             f'<animate '
             f'attributeName="opacity" '
-            f'keyTimes="0;{t};{burst_end};1" '
+            f'keyTimes="0;{eat_t};{burst_end};1" '
             f'values="0;0.9;0;0" '
-            f'dur="{total_duration}s" '
+            f'dur="{duration}s" '
             f'repeatCount="indefinite"/>'
 
             '</circle>'
         )
 
-    svg.append("</g>")
+    svg.append(
+        '</g>'
+    )
 
     # ========================================================
     # SNAKE
     # ========================================================
 
-    # Find maximum snake length.
-    max_body_length = max(
-        len(frame["body"])
-        for frame in frames
+    max_length = max(
+        len(f["body"])
+        for f in frames
     )
 
-    svg.append("<g>")
+    svg.append(
+        '<g id="snake">'
+    )
 
-    # Draw tail first, then head last.
+    # Draw tail first.
+    # Draw head last.
     for segment_index in range(
-        max_body_length - 1,
+        max_length - 1,
         -1,
-        -1,
+        -1
     ):
 
         x_values = []
         y_values = []
         opacity_values = []
 
-        for frame in frames:
+        for current_frame in frames:
 
-            body = frame["body"]
+            body = current_frame["body"]
 
-            if segment_index < len(body):
+            if (
+                segment_index
+                < len(body)
+            ):
 
-                cell = body[segment_index]
+                cell = body[
+                    segment_index
+                ]
+
                 x, y = xy(cell)
 
                 x_values.append(
-                    str(x - SIZE / 2)
+                    str(
+                        x
+                        - (
+                            SIZE + 1
+                        ) / 2
+                    )
                 )
 
                 y_values.append(
-                    str(y - SIZE / 2)
+                    str(
+                        y
+                        - (
+                            SIZE + 1
+                        ) / 2
+                    )
                 )
 
-                opacity_values.append("1")
+                opacity_values.append(
+                    "1"
+                )
 
             else:
-                # Segment doesn't exist yet.
+
+                # Segment hasn't been created yet.
                 #
-                # Put it at the tail position and hide it.
-                #
-                tail = body[-1]
-                x, y = xy(tail)
+                # Keep it at the tail position,
+                # but hide it.
+
+                body_tail = body[-1]
+
+                x, y = xy(
+                    body_tail
+                )
 
                 x_values.append(
-                    str(x - SIZE / 2)
+                    str(
+                        x
+                        - (
+                            SIZE + 1
+                        ) / 2
+                    )
                 )
 
                 y_values.append(
-                    str(y - SIZE / 2)
+                    str(
+                        y
+                        - (
+                            SIZE + 1
+                        ) / 2
+                    )
                 )
 
-                opacity_values.append("0")
+                opacity_values.append(
+                    "0"
+                )
 
-        is_head = segment_index == 0
+        # ----------------------------------------------------
+        # HEAD
+        # ----------------------------------------------------
 
-        if is_head:
-            seg_size = SIZE + 2.5
-            fill = SNAKE_HEAD_COLOR
-            radius = 2.5
-        else:
-            seg_size = SIZE + 1.0
-            fill = SNAKE_COLOR
-            radius = 2.2
+        if segment_index == 0:
 
-        # Slightly fade older tail segments.
-        if is_head:
-            base_opacity = 1
-        else:
-            base_opacity = max(
-                0.45,
-                0.92 - segment_index * 0.025,
+            segment_size = (
+                SIZE + 2.5
             )
+
+            radius = 2.8
+
+            fill = (
+                SNAKE_HEAD_COLOR
+            )
+
+        # ----------------------------------------------------
+        # BODY
+        # ----------------------------------------------------
+
+        else:
+
+            segment_size = (
+                SIZE + 1
+            )
+
+            radius = 2.4
+
+            fill = SNAKE_COLOR
 
         svg.append(
             f'<rect '
-            f'width="{seg_size}" '
-            f'height="{seg_size}" '
+            f'width="{segment_size}" '
+            f'height="{segment_size}" '
             f'rx="{radius}" '
             f'fill="{fill}" '
-            f'opacity="0">'
+            f'filter="url(#glow)">'
 
             f'<animate '
             f'attributeName="x" '
             f'keyTimes="{key_times}" '
             f'values="{";".join(x_values)}" '
             f'calcMode="discrete" '
-            f'dur="{total_duration}s" '
+            f'dur="{duration}s" '
             f'repeatCount="indefinite"/>'
 
             f'<animate '
@@ -838,7 +1053,7 @@ def build_svg(
             f'keyTimes="{key_times}" '
             f'values="{";".join(y_values)}" '
             f'calcMode="discrete" '
-            f'dur="{total_duration}s" '
+            f'dur="{duration}s" '
             f'repeatCount="indefinite"/>'
 
             f'<animate '
@@ -846,39 +1061,49 @@ def build_svg(
             f'keyTimes="{key_times}" '
             f'values="{";".join(opacity_values)}" '
             f'calcMode="discrete" '
-            f'dur="{total_duration}s" '
+            f'dur="{duration}s" '
             f'repeatCount="indefinite"/>'
 
             '</rect>'
         )
 
-        # ----------------------------------------------------
-        # HEAD EYE
-        # ----------------------------------------------------
+        # ====================================================
+        # EYES
+        # ====================================================
 
-        if is_head:
+        if segment_index == 0:
 
             eye_x = []
             eye_y = []
             eye_opacity = []
 
-            for frame in frames:
+            for current_frame in frames:
 
-                body = frame["body"]
+                body = current_frame[
+                    "body"
+                ]
 
                 if body:
 
-                    x, y = xy(body[0])
+                    x, y = xy(
+                        body[0]
+                    )
 
                     eye_x.append(
-                        str(x + 2.3)
+                        str(
+                            x + 2.2
+                        )
                     )
 
                     eye_y.append(
-                        str(y - 2.3)
+                        str(
+                            y - 2.2
+                        )
                     )
 
-                    eye_opacity.append("1")
+                    eye_opacity.append(
+                        "1"
+                    )
 
                 else:
 
@@ -896,7 +1121,7 @@ def build_svg(
                 f'keyTimes="{key_times}" '
                 f'values="{";".join(eye_x)}" '
                 f'calcMode="discrete" '
-                f'dur="{total_duration}s" '
+                f'dur="{duration}s" '
                 f'repeatCount="indefinite"/>'
 
                 f'<animate '
@@ -904,7 +1129,7 @@ def build_svg(
                 f'keyTimes="{key_times}" '
                 f'values="{";".join(eye_y)}" '
                 f'calcMode="discrete" '
-                f'dur="{total_duration}s" '
+                f'dur="{duration}s" '
                 f'repeatCount="indefinite"/>'
 
                 f'<animate '
@@ -912,15 +1137,23 @@ def build_svg(
                 f'keyTimes="{key_times}" '
                 f'values="{";".join(eye_opacity)}" '
                 f'calcMode="discrete" '
-                f'dur="{total_duration}s" '
+                f'dur="{duration}s" '
                 f'repeatCount="indefinite"/>'
 
                 '</circle>'
             )
 
-    svg.append("</g>")
+    svg.append(
+        '</g>'
+    )
 
-    svg.append("</svg>")
+    # ========================================================
+    # CLOSE SVG
+    # ========================================================
+
+    svg.append(
+        '</svg>'
+    )
 
     return "".join(svg)
 
@@ -932,72 +1165,63 @@ def build_svg(
 def main():
 
     if len(sys.argv) < 3:
+
         print(
-            "Usage: python3 generate_snake.py "
-            "<github_username> <output.svg>"
+            "Usage: "
+            "python3 generate_snake.py "
+            "<github_username> "
+            "<output.svg>"
         )
+
         sys.exit(1)
 
     username = sys.argv[1]
     output_path = sys.argv[2]
 
     print(
-        f"Fetching contribution data for @{username}..."
+        f"Fetching GitHub contributions "
+        f"for @{username}..."
     )
 
-    grid, n_weeks, n_days = fetch_grid(username)
-
-    print(
-        f"Grid: {n_weeks} weeks × {n_days} days"
+    grid, n_weeks, n_days = fetch_grid(
+        username
     )
 
-    target_count = sum(
+    active = sum(
         1
         for level in grid.values()
         if level > 0
     )
 
     print(
-        f"Contribution targets: {target_count}"
+        f"Grid: "
+        f"{n_weeks} × {n_days}"
+    )
+
+    print(
+        f"Active contribution squares: "
+        f"{active}"
     )
 
     print(
         "Simulating Snake..."
     )
 
-    frames, eaten_order = simulate_snake(
+    frames, eaten = simulate_run(
         grid,
         n_weeks,
         n_days,
     )
 
     print(
-        f"Generated {len(frames)} animation frames"
+        f"Animation frames: "
+        f"{len(frames)}"
     )
 
     print(
-        f"Snake ate {len(eaten_order)} contribution squares"
+        f"Squares eaten: "
+        f"{len(eaten)}"
     )
-
-    if eaten_order:
-
-        counts = {
-            1: 0,
-            2: 0,
-            3: 0,
-            4: 0,
-        }
-
-        for _, level in eaten_order:
-            counts[level] += 1
-
-        print(
-            "Eaten:",
-            f"Level 4={counts[4]},",
-            f"Level 3={counts[3]},",
-            f"Level 2={counts[2]},",
-            f"Level 1={counts[1]}",
-        )
 
     print(
         "Building SVG..."
@@ -1006,25 +1230,28 @@ def main():
     svg = build_svg(
         grid,
         frames,
-        eaten_order,
+        eaten,
         n_weeks,
         n_days,
     )
 
     output_dir = os.path.dirname(
-        os.path.abspath(output_path)
+        os.path.abspath(
+            output_path
+        )
     )
 
     os.makedirs(
         output_dir,
-        exist_ok=True,
+        exist_ok=True
     )
 
     with open(
         output_path,
         "w",
-        encoding="utf-8",
+        encoding="utf-8"
     ) as f:
+
         f.write(svg)
 
     print(
@@ -1032,7 +1259,8 @@ def main():
     )
 
     print(
-        f"✓ SVG size: {len(svg):,} bytes"
+        f"✓ SVG size: "
+        f"{len(svg):,} bytes"
     )
 
 
