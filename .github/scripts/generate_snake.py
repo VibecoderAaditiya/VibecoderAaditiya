@@ -17,7 +17,8 @@ CELL = 13           # px between cell centers
 SIZE = 9             # square body size
 PAD_X = 30
 PAD_Y = 30
-TOTAL_DUR = 42       # seconds for one full loop
+TOTAL_DUR = None    # computed dynamically from path length — see PER_STEP below
+STEP_TIME = 0.11    # seconds per grid step — constant pace regardless of path length
 MAX_TAIL = 7         # max snake segments (including head)
 BURST_FRAC = 0.012
 FADE_FRAC = 0.02
@@ -73,17 +74,20 @@ def manhattan_path(a, b):
 
 
 def build_order(grid, n_weeks, n_days):
-    """Nearest-neighbor path, visiting brightest squares first, dimmest active last."""
-    all_cells = [(w, d) for w in range(n_weeks) for d in range(n_days) if (w, d) in grid]
+    """Sequential path: sweeps left-to-right within each brightness tier
+    (brightest tier fully swept before moving to the next), so the path
+    never folds back on itself and the snake's own tail never crosses
+    its head."""
     pos = (0, 0)
     order = []          # list of (week, weekday)
     eat_flags = []      # True if this step is an actual "eat" of a target square
 
     for level in (4, 3, 2, 1):
-        remaining = {c for c in all_cells if grid[c] == level}
-        while remaining:
-            nxt = min(remaining, key=lambda c: abs(c[0] - pos[0]) + abs(c[1] - pos[1]))
-            remaining.discard(nxt)
+        targets = sorted(
+            [c for c in grid if grid[c] == level],
+            key=lambda c: (c[0], c[1]),
+        )
+        for nxt in targets:
             for step_cell in manhattan_path(pos, nxt):
                 is_target = step_cell == nxt
                 order.append(step_cell)
@@ -101,6 +105,8 @@ def build_svg(grid, order, eat_flags, n_weeks, n_days):
         return PAD_X + cell[0] * CELL, PAD_Y + cell[1] * CELL
 
     n = len(order)
+    global TOTAL_DUR
+    TOTAL_DUR = round(max(n - 1, 1) * STEP_TIME, 2)
     times = [round(i / (n - 1), 5) for i in range(n)]
 
     # first eat-time per target cell (a cell is only "eaten" once, even if path crosses it again)
