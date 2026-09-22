@@ -4,7 +4,7 @@
 
 <br/>
 
-<img src="https://komarev.com/ghpvc/?username=YOUR_GITHUB_USERNAME&label=Profile%20Views&color=6C63FF&style=flat" alt="Profile views" />
+<img src="https://komarev.com/ghpvc/?username=VibecoderAaditiya&label=Profile%20Views&color=6C63FF&style=flat" alt="Profile views" />
 
 </div>
 
@@ -41,11 +41,11 @@
 
 | Project | Description |
 |---|---|
-| 🎙️ **[Jarvis](https://github.com/YOUR_GITHUB_USERNAME/jarvis)** | Local-first AI voice assistant — wake-word detection, tiered memory (Redis/Postgres/Qdrant), LLM orchestration, Gmail/Calendar integration, browser automation, FastAPI dashboard |
-| 📄 **[PDF Imposition App](https://github.com/YOUR_GITHUB_USERNAME/pdf-imposition-app)** | Web app for print-ready PDF layouts — 2×2 imposition, drag-and-drop page rearrangement, print-ready export |
-| 📱 **Mental Wellness Journal (iOS)** | SwiftUI journaling app built for an iOS Application Development lab, covering mood tracking and reflection flows |
-| 🧠 **BrandPulse AI & ConnectTel Churn Model** | NLP sentiment analysis and churn prediction models built during my Persevex internship |
-| 📖 **Recipe Notebook** | Interactive recipe notebook with a handwritten aesthetic, paired with a Python PDF export pipeline |
+| 📱 **[SOLACE](https://github.com/VibecoderAaditiya/SOLACE)** | A personal Mental Wellness journal for people who love writing, built in Swift with a modern touch |
+| 📊 **[Telco Customer Churn Prediction](https://github.com/VibecoderAaditiya/Telco-Customer-Churn-Prediction)** | Predictive customer churn analysis using machine learning |
+| 🧠 **[Brandpulse-Ai](https://github.com/VibecoderAaditiya/Brandpulse-Ai)** | US airline tweet sentiment data collection and model training |
+| 🎙️ **Jarvis** | Local-first AI voice assistant — wake-word detection, tiered memory (Redis/Postgres/Qdrant), LLM orchestration, Gmail/Calendar integration, browser automation, FastAPI dashboard *(repo coming soon)* |
+| 📄 **PDF Imposition App** | Web app for print-ready PDF layouts — 2×2 imposition, drag-and-drop page rearrangement, print-ready export *(repo coming soon)* |
 
 ---
 
@@ -53,12 +53,12 @@
 
 <div align="center">
 
-<img height="165" src="https://github-readme-stats.vercel.app/api?username=YOUR_GITHUB_USERNAME&show_icons=true&theme=tokyonight&hide_border=true&count_private=true" alt="GitHub Stats" />
-<img height="165" src="https://github-readme-stats.vercel.app/api/top-langs/?username=YOUR_GITHUB_USERNAME&layout=compact&theme=tokyonight&hide_border=true" alt="Top Languages" />
+<img height="165" src="https://github-readme-stats.vercel.app/api?username=VibecoderAaditiya&show_icons=true&theme=tokyonight&hide_border=true&count_private=true" alt="GitHub Stats" />
+<img height="165" src="https://github-readme-stats.vercel.app/api/top-langs/?username=VibecoderAaditiya&layout=compact&theme=tokyonight&hide_border=true" alt="Top Languages" />
 
 <br/>
 
-<img src="https://github-readme-streak-stats.herokuapp.com/?user=YOUR_GITHUB_USERNAME&theme=tokyonight&hide_border=true" alt="GitHub Streak" />
+<img src="https://github-readme-streak-stats.herokuapp.com/?user=VibecoderAaditiya&theme=tokyonight&hide_border=true" alt="GitHub Streak" />
 
 </div>
 
@@ -69,9 +69,9 @@
 <div align="center">
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/YOUR_GITHUB_USERNAME/output/github-contribution-grid-snake-dark.svg" />
-  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/YOUR_GITHUB_USERNAME/output/github-contribution-grid-snake.svg" />
-  <img alt="github contribution snake animation" src="https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/YOUR_GITHUB_USERNAME/output/github-contribution-grid-snake.svg" />
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/VibecoderAaditiya/VibecoderAaditiya/output/github-contribution-grid-snake-dark.svg" />
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/VibecoderAaditiya/VibecoderAaditiya/output/github-contribution-grid-snake.svg" />
+  <img alt="github contribution snake animation" src="https://raw.githubusercontent.com/VibecoderAaditiya/VibecoderAaditiya/output/github-contribution-grid-snake.svg" />
 </picture>
 
 </div>
@@ -82,8 +82,7 @@
 
 <div align="center">
 
-[![LinkedIn](https://img.shields.io/badge/-LinkedIn-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white)](https://linkedin.com/in/YOUR_LINKEDIN)
-[![Instagram](https://img.shields.io/badge/-Instagram-E4405F?style=for-the-badge&logo=instagram&logoColor=white)](https://instagram.com/YOUR_HANDLE)
-[![Gmail](https://img.shields.io/badge/-Email-D14836?style=for-the-badge&logo=gmail&logoColor=white)](mailto:YOUR_EMAIL@gmail.com)
+[![LinkedIn](https://img.shields.io/badge/-LinkedIn-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white)](https://linkedin.com/in/aaditiya-anjan)
+[![Gmail](https://img.shields.io/badge/-Email-D14836?style=for-the-badge&logo=gmail&logoColor=white)](mailto:pratapsinghaaditiya@gmail.com)
 
 </div>
