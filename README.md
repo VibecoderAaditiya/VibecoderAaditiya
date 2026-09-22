@@ -68,7 +68,7 @@
 
 <div align="center">
 
-<img alt="animated glowing snake eating my GitHub contribution graph" src="https://raw.githubusercontent.com/VibecoderAaditiya/VibecoderAaditiya/main/assets/snake.svg" />
+![Contribution Snake](https://raw.githubusercontent.com/VibecoderAaditiya/VibecoderAaditiya/output/github-snake-dark.svg)
 
 </div>
 
