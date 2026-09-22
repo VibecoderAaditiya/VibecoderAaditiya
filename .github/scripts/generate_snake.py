@@ -9,6 +9,7 @@ Usage: python3 generate_snake.py <github_username> <output_svg_path>
 No API token needed — reads the public contributions page directly.
 """
 import sys
+import os
 import re
 import datetime
 import urllib.request
@@ -227,6 +228,9 @@ def main():
     grid, n_weeks, n_days = fetch_grid(username)
     order = boustrophedon_order(grid, n_weeks, n_days)
     svg = build_svg(order, n_weeks, n_days)
+    out_dir = os.path.dirname(out_path)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
     with open(out_path, "w") as f:
         f.write(svg)
     print(f"Wrote {out_path} ({len(order)} cells, {len(svg)} bytes)")
